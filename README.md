@@ -1,0 +1,3 @@
+Big Data Project
+
+This project demonstrates an end-to-end big data pipeline with automatic infrastructure provisioning using Terraform. It includes data ingestion applications that push dummy sales data to an S3 bucket periodically, an ETL job in Spark to process this data and update an RDS instance, and advanced data transformations using DBT on the PostgreSQL database. The infrastructure setup involves various AWS services, ensuring a scalable and efficient data engineering solution.
