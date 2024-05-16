@@ -1,0 +1,642 @@
+This is my project structure:
+
+/home/jakub/Private/BigDataProject/terraform
+├── configuration
+│   ├── database
+│   │   ├── outputs.tf
+│   │   ├── rds_instance.tf
+│   │   └── variables.tf
+│   ├── ecr
+│   │   ├── lifecycle_policy.tf
+│   │   ├── outputs.tf
+│   │   └── repository.tf
+│   ├── glue
+│   │   ├── glue.tf
+│   │   ├── outputs.tf
+│   │   └── variables.tf
+│   ├── lambda
+│   │   ├── cloudwatch.tf
+│   │   ├── function.tf
+│   │   ├── role.tf
+│   │   └── variables.tf
+│   ├── s3
+│   │   ├── outputs.tf
+│   │   ├── s3.tf
+│   │   └── variables.tf
+│   └── security
+│       ├── outputs.tf
+│       ├── rds_sg.tf
+│       └── variables.tf
+├── gen_prompt.py
+├── main.tf
+├── networking
+│   ├── db_subnet_group.tf
+│   ├── internet_gateway.tf
+│   ├── outputs.tf
+│   ├── route_table.tf
+│   ├── subnets.tf
+│   ├── variables.tf
+│   └── vpc.tf
+├── outputs.tf
+├── result_terra.txt
+├── terraform.tfstate
+├── terraform.tfstate.backup
+└── variables.tf
+
+8 directories, 33 files
+
+Displaying contents of each file:
+
+/home/jakub/Private/BigDataProject/terraform/outputs.tf:
+output "db_instance_address" {
+  value = module.database.db_instance_address
+}
+
+output "data_bucket_name" {
+  value = module.s3.data_bucket_bucket_name
+}
+
+output "ecr_repository_url" {
+  value = module.ecr.ecr_repository_url
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/main.tf:
+provider "aws" {
+  region = var.aws_region
+}
+
+data "aws_caller_identity" "current" {}
+
+module "networking" {
+  source     = "./networking"
+  aws_region = var.aws_region
+}
+
+module "security" {
+  source = "./configuration/security"
+  vpc_id = module.networking.vpc_id
+}
+
+module "database" {
+  source = "./configuration/database"
+
+  vpc_id                = module.networking.vpc_id
+  db_subnet_group_name  = module.networking.db_subnet_group_name
+  db_security_group_ids = [module.security.rds_sg_id]
+  database_username     = var.database_username
+  database_password     = var.database_password
+}
+
+module "s3" {
+  source = "./configuration/s3"
+}
+
+module "glue" {
+  source                = "./configuration/glue"
+  db_security_group_ids = [module.security.rds_sg_id]
+  db_subnet_group_name  = module.networking.db_subnet_group_name
+  database_username = var.database_username
+  database_password = var.database_password
+  availability_zone = module.networking.subnet_a_availability_zone
+  db_instance_address = module.database.db_instance_address
+  subnet_a_id = module.networking.subnet_a_id
+}
+
+resource "aws_glue_catalog_database" "default" {
+  name = "default"
+}
+
+module "ecr" {
+  source = "./configuration/ecr"
+}
+
+module "lambda" {
+  source = "./configuration/lambda"
+  aws_region = var.aws_region
+  bucket_name = module.s3.data_bucket_bucket_name
+  file_prefix = "sales_data"
+  ecr_repository_url = module.ecr.ecr_repository_url
+  aws_caller_identity_id = data.aws_caller_identity.current.id
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/result_terra.txt:
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/variables.tf:
+variable "aws_region" {
+  default = "eu-central-1"
+}
+
+variable "database_username" {
+  description = "db username"
+  type        = string
+  default     = "username"
+}
+variable "database_password" {
+  description = "db password"
+  type        = string
+  default     = "password"
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/ecr/outputs.tf:
+output "ecr_repository_url" {
+  value = aws_ecr_repository.my_ecr_repo.repository_url
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/ecr/repository.tf:
+resource "aws_ecr_repository" "my_ecr_repo" {
+  name                 = "${terraform.workspace}-applications-repo"
+  image_tag_mutability = "MUTABLE"
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  tags = {
+    Project = "${terraform.workspace} FastAPI App"
+  }
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/ecr/lifecycle_policy.tf:
+resource "aws_ecr_lifecycle_policy" "my_ecr_repo_policy" {
+  repository = aws_ecr_repository.my_ecr_repo.name
+
+  policy = jsonencode({
+    rules = [
+      {
+        rulePriority = 1,
+        description = "Expire untagged images",
+        selection = {
+          tagStatus = "untagged",
+          countType = "imageCountMoreThan",
+          countNumber = 1
+        },
+        action = {
+          type = "expire"
+        }
+      }
+    ]
+  })
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/glue/outputs.tf:
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/glue/glue.tf:
+resource "aws_glue_connection" "postgres_conn" {
+  name = "postgres_conn"
+  connection_properties = {
+    "JDBC_CONNECTION_URL" = "jdbc:postgresql://${var.db_instance_address}:5432/mypostgresdb"
+    "USERNAME"            = var.database_username
+    "PASSWORD"            = var.database_password
+  }
+  physical_connection_requirements {
+    availability_zone = var.availability_zone
+    security_group_id_list = var.db_security_group_ids
+    subnet_id = var.subnet_a_id
+  }
+}
+
+resource "aws_iam_role" "glue_role" {
+  name = "glue-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Principal = {
+          Service = "glue.amazonaws.com"
+        }
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "glue_attach" {
+  role       = aws_iam_role.glue_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole"
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/glue/variables.tf:
+variable "db_security_group_ids" {
+  type = list(string)
+}
+
+variable "db_subnet_group_name" {
+  type = string
+}
+
+variable "database_username" {
+  type = string
+}
+
+variable "database_password" {
+  type = string
+}
+
+variable "db_instance_address" {
+  type = string
+}
+
+variable "availability_zone" {
+  type = string
+}
+
+variable "subnet_a_id" {
+  type = string
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/s3/outputs.tf:
+output "data_bucket_bucket_arn" {
+  value = aws_s3_bucket.data_bucket.arn
+}
+output "data_bucket_bucket_name" {
+  value = aws_s3_bucket.data_bucket.bucket
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/s3/s3.tf:
+resource "aws_s3_bucket" "data_bucket" {
+  bucket = "your-data-bucket"
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/s3/variables.tf:
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/security/outputs.tf:
+output "rds_sg_id" {
+  value = aws_security_group.rds_sg.id
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/security/variables.tf:
+variable "vpc_id" {
+  description = "vpc id"
+  type        = string
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/security/rds_sg.tf:
+resource "aws_security_group" "rds_sg" {
+  name   = "${terraform.workspace}_rds_sg"
+  vpc_id = var.vpc_id
+
+  # NOTE Potentially dangerous rule - use jumphost to connect to production db instead:
+  ingress {
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/database/outputs.tf:
+output "db_instance_address" {
+  value = aws_db_instance.postgres_instance.address
+}
+
+output "db_instance_username" {
+  value = aws_db_instance.postgres_instance.username
+}
+
+output "db_instance_password" {
+  value = aws_db_instance.postgres_instance.password
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/database/rds_instance.tf:
+resource "aws_db_instance" "postgres_instance" {
+  engine               = "postgres"
+  engine_version       = "16.2"
+  instance_class       = "db.t3.micro"
+  identifier           = "${terraform.workspace}-postgres-instance"
+  allocated_storage    = 20
+  max_allocated_storage = 100
+  db_subnet_group_name = var.db_subnet_group_name
+  vpc_security_group_ids = var.db_security_group_ids
+  username             = var.database_username
+  password             = var.database_password
+  skip_final_snapshot  = true
+  publicly_accessible = true
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/database/variables.tf:
+variable "vpc_id" {}
+variable "db_subnet_group_name" {}
+variable "db_security_group_ids" {
+  description = "List of security group IDs for the DB instance"
+  type        = list(string)
+}
+variable "database_username" {}
+variable "database_password" {}
+
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/lambda/cloudwatch.tf:
+resource "aws_cloudwatch_event_rule" "every_hour" {
+  name        = "RunEveryHour"
+  description = "Trigger Lambda function every hour"
+  schedule_expression = "cron(0 * * * ? *)"
+}
+
+resource "aws_cloudwatch_event_target" "lambda_target" {
+  rule      = aws_cloudwatch_event_rule.every_hour.name
+  target_id = "lambda"
+  arn       = aws_lambda_function.generate_data.arn
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/lambda/role.tf:
+resource "aws_iam_role" "lambda_role" {
+  name = "lambda-execution-role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Principal = {
+          Service = "lambda.amazonaws.com"
+        },
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_policy_s3" {
+  name   = "lambda-policy-s3"
+  role   = aws_iam_role.lambda_role.id
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = [
+          "s3:PutObject",
+          "s3:PutObjectAcl"
+        ],
+        Resource = "arn:aws:s3:::${var.bucket_name}/*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Resource = "arn:aws:logs:${var.aws_region}:${var.aws_caller_identity_id}:*"
+      },
+      {
+        Effect = "Allow",
+        Action = [
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage",
+          "ecr:BatchCheckLayerAvailability"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "lambda_policy_logging" {
+  name        = "${terraform.workspace}_lambda_logging"
+  role        = aws_iam_role.lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Resource = "arn:aws:logs:*:*:*"
+      },
+    ]
+  })
+}
+
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/lambda/variables.tf:
+variable "aws_region" {
+  type = string
+}
+
+variable "bucket_name" {
+    type = string
+}
+
+variable "file_prefix" {
+  type = string
+}
+
+variable "ecr_repository_url" {
+  type = string
+}
+
+variable "aws_caller_identity_id" {
+  type = string
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/configuration/lambda/function.tf:
+resource "aws_lambda_function" "generate_data" {
+  package_type    = "Image"
+  function_name   = "GenerateDataFunction"
+  role            = aws_iam_role.lambda_role.arn
+  image_uri       = "${var.ecr_repository_url}:data-feed-latest"
+  timeout         = 60
+
+  environment {
+    variables = {
+      BUCKET_NAME = var.bucket_name
+      FILE_PREFIX = var.file_prefix
+    }
+  }
+
+  depends_on = [aws_iam_role_policy.lambda_policy_logging, aws_iam_role_policy.lambda_policy_s3]
+}
+
+resource "aws_lambda_permission" "allow_cloudwatch" {
+  statement_id  = "AllowExecutionFromCloudWatch"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.generate_data.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.every_hour.arn
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/route_table.tf:
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.my_igw.id
+  }
+
+  tags = {
+    Name = "${terraform.workspace}-public-route-table"
+  }
+}
+
+resource "aws_route" "internet_access" {
+  route_table_id         = aws_route_table.public.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.my_igw.id
+}
+
+resource "aws_route_table_association" "public_subnet" {
+  subnet_id      = aws_subnet.subnet_a.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table_association" "public_subnet_2" {
+  subnet_id      = aws_subnet.subnet_b.id
+  route_table_id = aws_route_table.public.id
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/outputs.tf:
+output "vpc_id" {
+  value = aws_vpc.main.id
+}
+
+output "subnet_a_id" {
+  value = aws_subnet.subnet_a.id
+}
+output "subnet_a_availability_zone" {
+  value = aws_subnet.subnet_a.availability_zone
+}
+
+output "subnet_b_id" {
+  value = aws_subnet.subnet_b.id
+
+}
+output "subnet_b_availability_zone" {
+  value = aws_subnet.subnet_b.availability_zone
+}
+
+
+output "db_subnet_group_name" {
+  value = aws_db_subnet_group.main.name
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/vpc.tf:
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  tags = {
+    Name = "${terraform.workspace}-vpc"
+  }
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/db_subnet_group.tf:
+resource "aws_db_subnet_group" "main" {
+  name       = "${terraform.workspace}_db_subnet_group"
+  subnet_ids = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
+
+  tags = {
+    Name = "My DB Subnet Group"
+  }
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/internet_gateway.tf:
+resource "aws_internet_gateway" "my_igw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "${terraform.workspace}-internet-gateway"
+  }
+}
+
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/variables.tf:
+variable "aws_region" {
+  type = string
+}
+
+--------------------
+
+/home/jakub/Private/BigDataProject/terraform/networking/subnets.tf:
+resource "aws_subnet" "subnet_a" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "${var.aws_region}a"
+  tags = {
+    Name = "${terraform.workspace}-subnet-a"
+  }
+}
+
+resource "aws_subnet" "subnet_b" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "${var.aws_region}b"
+  tags = {
+    Name = "${terraform.workspace}-subnet-b"
+  }
+}
+
+
+--------------------
+
