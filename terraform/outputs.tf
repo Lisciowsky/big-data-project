@@ -3,7 +3,7 @@ output "db_instance_address" {
 }
 
 output "data_bucket_name" {
-  value = module.s3.data_bucket_bucket_name
+  value = module.s3.sales_data_bucket_name
 }
 
 output "ecr_repository_url" {

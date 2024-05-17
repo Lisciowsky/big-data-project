@@ -1,6 +1,6 @@
 resource "aws_lambda_function" "generate_data" {
   package_type    = "Image"
-  function_name   = "GenerateDataFunction"
+  function_name   = "${terraform.workspace}-GenerateDataFunction"
   role            = aws_iam_role.lambda_role.arn
   image_uri       = "${var.ecr_repository_url}:data-feed-latest"
   timeout         = 60

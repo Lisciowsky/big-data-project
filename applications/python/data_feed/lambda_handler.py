@@ -7,9 +7,10 @@ import random
 import uuid
 import os
 
+import settings
+
+
 s3 = boto3.client('s3')
-bucket_name = 'your-data-bucket'
-file_prefix = 'sales_data'
 
 product_names = ['Widget A', 'Widget B', 'Widget C', 'Gadget A', 'Gadget B']
 categories = ['Widgets', 'Gadgets']
@@ -62,13 +63,13 @@ def lambda_handler(*_):
     
     save_to_parquet(data, file_path)
     
-    s3_key = f"{file_prefix}/{year}/{month}/{day}/{hour}/{file_name}"
-    upload_to_s3(file_path, bucket_name, s3_key)
+    s3_key = f"{settings.FILE_PREFIX}/{year}/{month}/{day}/{hour}/{file_name}"
+    upload_to_s3(file_path, settings.BUCKET_NAME, s3_key)
     
     os.remove(file_path)
     return {
         'statusCode': 200,
-        'body': f"Uploaded {file_name} to s3://{bucket_name}/{s3_key}"
+        'body': f"Uploaded {file_name} to s3://{settings.BUCKET_NAME}/{s3_key}"
     }
 
 if __name__ == "__main__":

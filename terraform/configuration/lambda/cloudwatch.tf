@@ -1,5 +1,5 @@
 resource "aws_cloudwatch_event_rule" "every_hour" {
-  name        = "RunEveryHour"
+  name        = "${terraform.workspace}-RunEveryHour"
   description = "Trigger Lambda function every hour"
   schedule_expression = "cron(0 * * * ? *)"
 }

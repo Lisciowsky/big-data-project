@@ -12,3 +12,8 @@ variable "database_password" {
   type        = string
   default     = "password"
 }
+
+variable "database_name" {
+  type = string
+  default = "sales_db"
+}

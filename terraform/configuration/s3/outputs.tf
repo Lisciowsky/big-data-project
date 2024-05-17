@@ -1,6 +1,13 @@
-output "data_bucket_bucket_arn" {
-  value = aws_s3_bucket.data_bucket.arn
+output "sales_data_bucket_arn" {
+  value = aws_s3_bucket.sales_data.arn
 }
-output "data_bucket_bucket_name" {
-  value = aws_s3_bucket.data_bucket.bucket
+output "sales_data_bucket_name" {
+  value = aws_s3_bucket.sales_data.bucket_domain_name
+}
+
+output "glue_scripts_bucket_arn" {
+  value = aws_s3_bucket.glue_scripts.arn
+}
+output "glue_scripts_bucket_name" {
+  value = aws_s3_bucket.glue_scripts.bucket_domain_name
 }

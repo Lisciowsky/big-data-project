@@ -23,3 +23,6 @@ deploy-lambda: build-lambda tag-lambda push-lambda
 
 build-vps:
 	docker build -t data_feed:vps-latest -f ./applications/python/data_feed/Dockerfile.vps ./applications/python/data_feed/.
+
+nuke:
+	aws-nuke-v2.25.0-linux-amd64 -c nuke-config.yaml --no-dry-run

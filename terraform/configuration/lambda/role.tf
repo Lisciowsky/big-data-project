@@ -1,5 +1,5 @@
 resource "aws_iam_role" "lambda_role" {
-  name = "lambda-execution-role"
+  name = "${terraform.workspace}-lambda-execution-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17",
     Statement = [
@@ -15,7 +15,7 @@ resource "aws_iam_role" "lambda_role" {
 }
 
 resource "aws_iam_role_policy" "lambda_policy_s3" {
-  name   = "lambda-policy-s3"
+  name   = "${terraform.workspace}-lambda-policy-s3"
   role   = aws_iam_role.lambda_role.id
   policy = jsonencode({
     Version = "2012-10-17",
@@ -51,7 +51,7 @@ resource "aws_iam_role_policy" "lambda_policy_s3" {
 }
 
 resource "aws_iam_role_policy" "lambda_policy_logging" {
-  name        = "${terraform.workspace}_lambda_logging"
+  name        = "${terraform.workspace}-lambda-logging"
   role        = aws_iam_role.lambda_role.id
 
   policy = jsonencode({

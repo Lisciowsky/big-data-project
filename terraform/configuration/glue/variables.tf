@@ -14,6 +14,9 @@ variable "database_password" {
   type = string
 }
 
+variable "database_name" {
+  type = string
+}
 variable "db_instance_address" {
   type = string
 }
@@ -23,6 +26,11 @@ variable "availability_zone" {
 }
 
 variable "subnet_a_id" {
+  type = string
+}
+
+variable "sales_data_bucket" {
+  description = "The s3 bucket with sales data"
   type = string
 }
 
